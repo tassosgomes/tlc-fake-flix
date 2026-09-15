@@ -1,0 +1,11 @@
+model Video {
+  id           String  @id
+  title        String
+  description  String
+  url          String
+  sizeInKb     Int
+  duration     Int
+  thumbnailUrl String?
+  createdAt    TimestampString(3)
+  updatedAt    TimestampString(3)
+}
