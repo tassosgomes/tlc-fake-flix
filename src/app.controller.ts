@@ -3,19 +3,26 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
+  NotFoundException,
+  Param,
   Post,
   Req,
+  Res,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
 import { AppService } from './app.service.js';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { randomUUID } from 'crypto';
-import { extname } from 'node:path';
+import path, { extname } from 'node:path';
 import { diskStorage } from 'multer';
 import { db } from './prisma/db.js';
+import fs from 'fs'
+import type { Request, Response } from 'express'
+
 
 interface UploadVideoBody {
   title?: string;
@@ -119,9 +126,42 @@ export class AppController {
         'updatedAt',
       )
       .build();
-      
+
     const [createdVideo] = await db.runtime().query(insertVideo);
 
     return createdVideo;
+  }
+
+  @Get('stream/:videoId')
+  @Header('Content-Type', 'video/mp4')
+  async streamVideo(@Param('videoId') videoId: string, @Req() req: Request, @Res() res: Response): Promise<any> {
+    const video = await db.orm.public.Video.first({ id: videoId });
+
+    if (!video) {
+      throw new NotFoundException('Video not found');
+    }
+
+    const videoPath = path.join('.', video.url);
+    const fileSize = fs.statSync(videoPath).size;
+
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      const chunkSize = end - start + 1;
+      const file = fs.createReadStream(videoPath, { start, end });
+
+      res.writeHead(HttpStatus.PARTIAL_CONTENT, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': `bytes`,
+        'Content-Length': chunkSize,
+        'Content-Type': 'video/mp4'
+      });
+
+      return file.pipe(res);
+    }
   }
 }
